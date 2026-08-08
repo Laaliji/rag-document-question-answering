@@ -1,0 +1,13 @@
+
+# Python virtual environment
+mini-rag-app/
+
+# MongoDB runtime data
+docker/mongodb/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]

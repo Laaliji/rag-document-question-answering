@@ -6,6 +6,19 @@ __pycache__/
 # C extensions
 *.so
 
+
+# Python virtual environment
+mini-rag-app/
+mini-rag-app/
+docker/mongodb/
+.env
+__pycache__/
+*.py[cod]
+# MongoDB data
+docker/mongodb/
+
+# Environment variables
+.env
 # Distribution / packaging
 .Python
 build/
