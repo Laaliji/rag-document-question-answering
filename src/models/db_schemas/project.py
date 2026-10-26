@@ -14,4 +14,4 @@ class Project(BaseModel):
         return value
 
     class Config:  # Allow arbitrary types like ObjectId
-        arbitrary_types_allowed = True
+        arbitrary_types_allowed = True ## This because Pydantic does not natively support ObjectId, so we need to allow arbitrary types. So, It will just ignore the type checking for ObjectId and allow it to be used as a field in the model.

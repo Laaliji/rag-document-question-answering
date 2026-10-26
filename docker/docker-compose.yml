@@ -1,9 +1,9 @@
 services:
   mongodb:
-    image: mongo:8.2.5
+    image: mongo:9
     container_name: mongodb
     ports:
-      - "27007:27017"
+      - "27107:27017"
     volumes:
       - ./mongodb:/data/db
     networks:
@@ -12,4 +12,3 @@ services:
 
 networks:
   backend:
-    
