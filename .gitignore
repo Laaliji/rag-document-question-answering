@@ -1,6 +1,7 @@
 
 # Python virtual environment
 mini-rag-app/
+minirag-env/
 
 # MongoDB runtime data
 docker/mongodb/

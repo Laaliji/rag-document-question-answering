@@ -1,20 +1,14 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import Optional
 from bson.objectid import ObjectId
 
 class DataChunk(BaseModel):
-    _id: Optional[ObjectId]
+    id: Optional[ObjectId] = Field(None, alias="_id")
     chunk_project_id: ObjectId
     chunk_text: str = Field(..., min_length=1)
-    chunk_metadata: Optional[dict]
-    chunk_order: Optional[int] = Field(..., gt=0)  # Ensure chunk_order is non-negative
-
-    @field_validator("chunk_project_id", "chunk_text")
-    @classmethod
-    def validate_ids(cls, value):
-        if not value.isalnum():
-            raise ValueError("IDs must be alphanumeric.")
-        return value
+    chunk_metadata: dict = Field(default_factory=dict)
+    chunk_order: int = Field(..., gt=0)  # Ensure chunk_order is positive (starts at 1)
 
     class Config:
         arbitrary_types_allowed = True
+        populate_by_name = True

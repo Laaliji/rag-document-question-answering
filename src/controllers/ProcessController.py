@@ -16,6 +16,18 @@ class ProcessController(BaseController):
     def get_file_extension(self, file_id: str):
         return os.path.splitext(file_id)[-1]
     
+    def get_file_path(self, file_id: str):
+        """Return the file path inside the project folder, or None if file_id is unsafe or missing"""
+        # Reject ids like "../../.env" that would escape the project folder
+        if os.path.basename(file_id) != file_id:
+            return None
+
+        file_path = os.path.join(self.project_path, file_id)
+        if not os.path.isfile(file_path):
+            return None
+
+        return file_path
+
     def get_file_loader(self, file_id: str):
         file_extension = self.get_file_extension(file_id=file_id)
         file_path = os.path.join(self.project_path, file_id)
@@ -29,6 +41,8 @@ class ProcessController(BaseController):
 
     def get_file_content(self, file_id: str):
         loader = self.get_file_loader(file_id=file_id)
+        if loader is None:
+            return None
         return loader.load()
     
     def process_file_content(self, file_content: list, 

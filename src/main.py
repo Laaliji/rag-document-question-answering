@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from routes import base, data
 from motor.motor_asyncio import AsyncIOMotorClient
 from helpers.config import get_settings, Settings
+from models import ProjectModel, ChunkModel
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -10,6 +11,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.mongodb_client = AsyncIOMotorClient(settings.MONGODB_URL)
     app.db_client = app.mongodb_client[settings.MONGODB_DATABASE]
+
+    # Create collection indexes (safe to run on every startup)
+    await ProjectModel(db_client=app.db_client).init_collection()
+    await ChunkModel(db_client=app.db_client).init_collection()
 
     yield  # app runs here
 

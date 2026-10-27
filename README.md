@@ -137,7 +137,7 @@ Returns `400` with `file_type_not_allowed` or `file_size_exceeded` when validati
 
 ### `POST /api/v1/data/process/{project_id}`
 
-Loads an uploaded file and splits it into chunks.
+Loads an uploaded file, splits it into chunks and saves them to MongoDB (the project is created on first use).
 
 ```bash
 $ curl -X POST "http://localhost:5000/api/v1/data/process/1" \
@@ -150,15 +150,21 @@ $ curl -X POST "http://localhost:5000/api/v1/data/process/1" \
 | `file_id`      | str  | —       | `file_id` returned by upload    |
 | `chunk_size`   | int  | `100`   | Characters per chunk            |
 | `overlap_size` | int  | `20`    | Overlap between chunks          |
-| `do_reset`     | int  | `0`     | Reserved, not used yet          |
+| `do_reset`     | int  | `0`     | `1` deletes the project's existing chunks first |
 
-Returns the list of chunks (`page_content` + `metadata`). Chunks are not yet persisted to MongoDB.
+Response (`200`):
+
+```json
+{ "message": "file_processing_success", "inserted_chunks": 8, "deleted_chunks": 0 }
+```
+
+Returns `404` `file_not_found` if the `file_id` does not exist in the project, and `422` if `project_id` is not alphanumeric.
 
 ## Data Models
 
 Defined in `src/models/db_schemas/`:
 
-- **`Project`**: `_id` (ObjectId), `project_id` (non-empty, alphanumeric)
-- **`DataChunk`**: `_id` (ObjectId), `chunk_project_id` (ObjectId of the project), `chunk_text` (non-empty), `chunk_metadata` (dict), `chunk_order` (int > 0)
+- **`Project`** (collection `projects`, unique index on `project_id`): `_id` (ObjectId), `project_id` (non-empty, alphanumeric)
+- **`DataChunk`** (collection `chunks`, index on `chunk_project_id`): `_id` (ObjectId), `chunk_project_id` (ObjectId of the project), `chunk_text` (non-empty), `chunk_metadata` (dict), `chunk_order` (int > 0)
 
 Both use `arbitrary_types_allowed = True` because Pydantic does not natively support `ObjectId`.
