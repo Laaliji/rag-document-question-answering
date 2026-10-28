@@ -14,6 +14,7 @@ class ChunkModel(BaseDataModel):
         Create the indexes of the chunks collection (no-op if they already exist).
         """
         await self.collection.create_index("chunk_project_id")
+        await self.collection.create_index("chunk_asset_id")
 
     async def insert_many_chunks(self, chunks: list[DataChunk], batch_size: int = 100):
         """
@@ -34,3 +35,18 @@ class ChunkModel(BaseDataModel):
         """
         result = await self.collection.delete_many({"chunk_project_id": project_id})
         return result.deleted_count
+
+    async def delete_chunks_by_asset_id(self, asset_id: ObjectId):
+        """
+        Delete all chunks of one file (asset), returns the number of deleted chunks.
+        """
+        result = await self.collection.delete_many({"chunk_asset_id": asset_id})
+        return result.deleted_count
+
+    async def get_project_chunks(self, project_id: ObjectId, page_no: int = 1, page_size: int = 50):
+        """
+        Return one page of a project's chunks, ordered so pages are stable.
+        """
+        records = await self.collection.find({"chunk_project_id": project_id})             .sort("_id", 1)             .skip((page_no - 1) * page_size)             .limit(page_size)             .to_list(length=None)
+
+        return [DataChunk(**record) for record in records]

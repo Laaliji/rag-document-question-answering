@@ -5,6 +5,7 @@ minirag-env/
 
 # MongoDB runtime data
 docker/mongodb/
+docker/qdrant/
 
 # Environment variables
 .env
