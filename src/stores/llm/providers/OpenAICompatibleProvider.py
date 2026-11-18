@@ -57,6 +57,32 @@ class OpenAICompatibleProvider(LLMInterface):
 
         return response.choices[0].message.content
 
+    async def stream_text(self, prompt: str, chat_history: list = [],
+                          max_output_tokens: Optional[int] = None,
+                          temperature: Optional[float] = None):
+
+        if not self.generation_model_id:
+            self.logger.error("Generation model is not set")
+            return
+
+        messages = chat_history + [self.construct_prompt(prompt=prompt, role=OpenAIRoleEnums.USER.value)]
+
+        stream = await self.client.chat.completions.create(
+            model=self.generation_model_id,
+            messages=messages,
+            max_tokens=max_output_tokens or self.default_max_output_tokens,
+            temperature=temperature if temperature is not None else self.default_generation_temperature,
+            stream=True,
+        )
+
+        try:
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        finally:
+            # Closing the stream tells Ollama to stop generating (e.g. the client hit "Stop")
+            await stream.close()
+
     async def embed_text(self, texts: List[str], document_type: str):
         """Embed a batch of texts, returns one vector per text (same order)"""
 

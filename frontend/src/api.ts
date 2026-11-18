@@ -59,11 +59,12 @@ const SIGNAL_TEXT: Record<string, string> = {
   vectordb_search_error: 'Search failed. Is Ollama running with nomic-embed-text pulled?',
   no_relevant_documents: 'No relevant passages were found for this question.',
   rag_answer_error: 'The model could not answer. Is Ollama running with qwen2.5:3b pulled?',
+  stream_interrupted: 'The connection to the backend was lost while answering.',
 }
 
 function describeSignal(signal: string, status: number) {
   if (SIGNAL_TEXT[signal]) return SIGNAL_TEXT[signal]
-  if (status === 0) return 'Cannot reach the backend. Is the API running on port 5000?'
+  if (status === 0 && !signal) return 'Cannot reach the backend. Is the API running on port 5000?'
   if (status === 422) return 'The request was rejected as invalid.'
   return signal || `Request failed (${status})`
 }
@@ -120,6 +121,64 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text, limit }),
     }),
+
+  /**
+   * Streams an answer. The backend sends NDJSON events: sources first, then tokens,
+   * then done/error. Resolves when the stream ends; abort `signal` to stop generation.
+   */
+  answerStream: async (
+    projectId: string,
+    text: string,
+    limit: number,
+    handlers: {
+      onSources: (sources: Source[], fullPrompt: string) => void
+      onToken: (text: string) => void
+    },
+    signal: AbortSignal,
+  ) => {
+    let res: Response
+    try {
+      res = await fetch(`/api/v1/nlp/index/answer/stream/${projectId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, limit }),
+        signal,
+      })
+    } catch (e) {
+      if (signal.aborted) throw e
+      throw new ApiError(0, '')
+    }
+
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => null)
+      throw new ApiError(body ? res.status : 0, body?.message ?? '')
+    }
+
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+    let buffer = ''
+    let finished = false
+
+    const handle = (line: string) => {
+      if (!line.trim()) return
+      const event = JSON.parse(line)
+      if (event.type === 'sources') handlers.onSources(event.sources, event.full_prompt)
+      else if (event.type === 'token') handlers.onToken(event.text)
+      else if (event.type === 'error') throw new ApiError(500, event.message)
+      else if (event.type === 'done') finished = true
+    }
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += value
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? '' // keep a partial line for the next read
+      lines.forEach(handle)
+    }
+    handle(buffer)
+
+    if (!finished) throw new ApiError(0, 'stream_interrupted')
+  },
 
   // XHR instead of fetch so we can report upload progress.
   upload: (projectId: string, file: File, onProgress: (fraction: number) => void) =>

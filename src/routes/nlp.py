@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Path, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from controllers import NLPController
 from models import ResponseSignal, ProjectModel, ChunkModel
 from .schemas.nlp import PushRequest, SearchRequest, AnswerRequest
+import json
 import logging
 
 logger = logging.getLogger("uvicorn.error")
@@ -177,4 +178,69 @@ async def answer_rag(request: Request, answer_request: AnswerRequest,
                  "answer": answer,
                  "full_prompt": full_prompt,
                  "sources": documents}
+    )
+
+@nlp_router.post("/index/answer/stream/{project_id}")
+async def answer_rag_stream(request: Request, answer_request: AnswerRequest,
+                            project_id: str = ProjectIdPath):
+    """Same as /index/answer but streams the result as NDJSON (one JSON object per line):
+
+    {"type": "sources", "sources": [...], "full_prompt": "..."}   sent first
+    {"type": "token", "text": "..."}                               repeated
+    {"type": "done"}  or  {"type": "error", "message": "..."}      sent last
+
+    Errors that happen before generation starts are returned as normal JSON responses
+    with the same status codes as /index/answer.
+    """
+    project = await ProjectModel(db_client=request.app.db_client).get_project(project_id=project_id)
+    if project is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": ResponseSignal.PROJECT_NOT_FOUND.value}
+        )
+
+    nlp_controller = get_nlp_controller(request)
+
+    try:
+        chat_history, full_prompt, documents = await nlp_controller.prepare_rag_prompt(
+            project=project, query=answer_request.text, limit=answer_request.limit
+        )
+    except Exception as e:
+        logger.error(f"Error while preparing the answer: {str(e)}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"message": ResponseSignal.RAG_ANSWER_ERROR.value}
+        )
+
+    if documents is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": ResponseSignal.VECTORDB_COLLECTION_NOT_FOUND.value}
+        )
+
+    if len(documents) == 0:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": ResponseSignal.NO_RELEVANT_DOCUMENTS.value}
+        )
+
+    def event(payload: dict) -> str:
+        return json.dumps(payload, ensure_ascii=False) + "\n"
+
+    async def generate():
+        yield event({"type": "sources", "sources": documents, "full_prompt": full_prompt})
+        try:
+            async for piece in nlp_controller.stream_rag_answer(chat_history, full_prompt):
+                yield event({"type": "token", "text": piece})
+        except Exception as e:
+            logger.error(f"Error while streaming the answer: {str(e)}")
+            yield event({"type": "error", "message": ResponseSignal.RAG_ANSWER_ERROR.value})
+            return
+        yield event({"type": "done"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+        # Ask proxies not to buffer, so tokens reach the browser immediately
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

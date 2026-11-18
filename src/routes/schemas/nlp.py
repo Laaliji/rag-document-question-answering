@@ -6,8 +6,8 @@ class PushRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     text: str = Field(..., min_length=1)
-    limit: Optional[int] = Field(5, gt=0, le=50)
+    limit: int = Field(5, gt=0, le=50)
 
 class AnswerRequest(BaseModel):
     text: str = Field(..., min_length=1)
-    limit: Optional[int] = Field(5, gt=0, le=20)  # fewer chunks = faster on small local models
+    limit: int = Field(5, gt=0, le=20)  # fewer chunks = faster on small local models

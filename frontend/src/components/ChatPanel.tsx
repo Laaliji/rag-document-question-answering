@@ -6,6 +6,7 @@ import {
   Copy,
   RotateCcw,
   Sparkles,
+  Square,
   TerminalSquare,
   Trash2,
   UploadCloud,
@@ -21,7 +22,9 @@ export interface ChatMessage {
   prompt?: string
   ms?: number
   error?: boolean
-  pending?: boolean
+  pending?: boolean // waiting for the first token
+  streaming?: boolean // tokens are arriving
+  stopped?: boolean // the user stopped generation
   question?: string // the question an assistant message answers (for retry)
 }
 
@@ -47,11 +50,20 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
   const [topK, setTopK] = useState(5)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const busy = messages.some((m) => m.pending)
+  const abortRef = useRef<AbortController | null>(null)
+  const busy = messages.some((m) => m.pending || m.streaming)
+  const last = messages[messages.length - 1]
 
+  // Stop generating when the panel unmounts (e.g. switching project)
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  // Follow the answer as it streams, unless the user scrolled up to read something
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length, messages[messages.length - 1]?.pending])
+    const el = scrollRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+    if (nearBottom || last?.pending) el.scrollTo({ top: el.scrollHeight, behavior: last?.streaming ? 'auto' : 'smooth' })
+  }, [messages.length, last?.pending, last?.text, last?.streaming])
 
   // Auto-grow the composer up to a max height
   useEffect(() => {
@@ -74,21 +86,41 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
     )
     setInput('')
 
+    const update = (patch: (x: ChatMessage) => Partial<ChatMessage>) =>
+      setMessages((m) => m.map((x) => (x.id === id ? { ...x, ...patch(x) } : x)))
+
+    const controller = new AbortController()
+    abortRef.current = controller
     const started = performance.now()
     try {
-      const res = await api.answer(projectId, q, topK)
-      const ms = performance.now() - started
-      setMessages((m) =>
-        m.map((x) =>
-          x.id === id ? { ...x, pending: false, text: res.answer, sources: res.sources, prompt: res.full_prompt, ms } : x,
-        ),
+      await api.answerStream(
+        projectId,
+        q,
+        topK,
+        {
+          onSources: (sources, prompt) => update(() => ({ sources, prompt })),
+          onToken: (piece) => update((x) => ({ pending: false, streaming: true, text: x.text + piece })),
+        },
+        controller.signal,
       )
+      update(() => ({ pending: false, streaming: false, ms: performance.now() - started }))
     } catch (e) {
-      setMessages((m) =>
-        m.map((x) => (x.id === id ? { ...x, pending: false, error: true, text: (e as Error).message } : x)),
-      )
+      if (controller.signal.aborted) {
+        update(() => ({ pending: false, streaming: false, stopped: true, ms: performance.now() - started }))
+      } else {
+        // Keep any partial answer visible; the error replaces it only if nothing arrived
+        update((x) =>
+          x.text
+            ? { pending: false, streaming: false, stopped: true }
+            : { pending: false, streaming: false, error: true, text: (e as Error).message },
+        )
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
     }
   }
+
+  const stop = () => abortRef.current?.abort()
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -174,14 +206,20 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
             <span className="composer-hint">
               <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line
             </span>
-            <button
-              className="send-btn"
-              onClick={() => ask(input)}
-              disabled={!ready || busy || !input.trim()}
-              aria-label="Send question"
-            >
-              <ArrowUp size={17} strokeWidth={2.4} />
-            </button>
+            {busy ? (
+              <button className="send-btn is-stop" onClick={stop} aria-label="Stop generating" title="Stop">
+                <Square size={12} fill="currentColor" strokeWidth={0} />
+              </button>
+            ) : (
+              <button
+                className="send-btn"
+                onClick={() => ask(input)}
+                disabled={!ready || !input.trim()}
+                aria-label="Send question"
+              >
+                <ArrowUp size={17} strokeWidth={2.4} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -194,7 +232,7 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
   const [showPrompt, setShowPrompt] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  if (m.pending) return <PendingAnswer />
+  if (m.pending) return <PendingAnswer passages={m.sources?.length} />
 
   if (m.error) {
     return (
@@ -226,7 +264,11 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
         <Sparkles size={14} />
       </div>
       <div className="msg-body">
-        <div className="answer">{m.text}</div>
+        <div className="answer">
+          {m.text}
+          {m.streaming && <span className="caret" aria-hidden />}
+        </div>
+        {m.stopped && <div className="stopped-note">Stopped</div>}
 
         {m.sources && m.sources.length > 0 && (
           <div className="sources">
@@ -261,7 +303,7 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
           </div>
         )}
 
-        <div className="msg-actions">
+        <div className="msg-actions" hidden={m.streaming}>
           <button className="icon-btn" onClick={copy} title="Copy answer" aria-label="Copy answer">
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
@@ -285,14 +327,20 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
   )
 }
 
-// Local CPU generation can take a while; show elapsed time and the current stage.
-function PendingAnswer() {
+// Shown until the first token arrives: retrieval, then the model reading the passages
+// (and loading into memory on the first question after a while — that can take ~20s on CPU).
+function PendingAnswer({ passages }: { passages?: number }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => clearInterval(t)
   }, [])
-  const stage = seconds < 2 ? 'Searching your documents' : 'Writing the answer'
+  const stage =
+    passages === undefined
+      ? 'Searching your documents'
+      : seconds < 12
+        ? `Reading ${passages} passage${passages === 1 ? '' : 's'}`
+        : 'Loading the model — the first answer takes longer'
 
   return (
     <div className="msg msg-assistant" aria-busy="true">

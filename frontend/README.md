@@ -5,7 +5,7 @@ React + TypeScript (Vite) interface for the RAG backend in `../src`.
 - Projects sidebar, drag-and-drop upload (PDF / TXT) with progress
 - One-click **Process & index** (chunking → local embeddings → Qdrant), with chunk size / overlap settings
 - Pipeline status (uploaded → chunked → indexed) and index stats
-- Chat with answers grounded in your documents: source passages with relevance scores, the full prompt for debugging, copy / regenerate
+- Chat with answers streamed as they are generated (with a Stop button), grounded in your documents: source passages with relevance scores, the full prompt for debugging, copy / regenerate
 - Light and dark themes, responsive down to phone width
 
 ## Run

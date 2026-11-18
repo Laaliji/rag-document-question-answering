@@ -70,19 +70,18 @@ class NLPController(BaseController):
             collection_name=collection_name, vector=vectors[0], limit=limit
         )
 
-    async def answer_rag_question(self, project: Project, query: str, limit: int = 5):
-        """Retrieve the top chunks for the query and ask the generation model to answer from them.
+    async def prepare_rag_prompt(self, project: Project, query: str, limit: int = 5):
+        """Retrieve the top chunks for the query and build the chat messages for the model.
 
-        Returns (answer, full_prompt, retrieved_documents); answer is None on failure,
-        retrieved_documents is None when the project has no vector collection.
+        Returns (chat_history, full_prompt, retrieved_documents). retrieved_documents is None
+        when the project has no vector collection and [] when nothing was found; the other
+        two values are None in both cases.
         """
         retrieved_documents = await self.search_vector_db_collection(
             project=project, text=query, limit=limit
         )
-        if retrieved_documents is None:
-            return None, None, None
-        if len(retrieved_documents) == 0:
-            return None, None, []
+        if not retrieved_documents:
+            return None, None, retrieved_documents
 
         system_prompt = rag_prompts.SYSTEM_PROMPT.substitute()
 
@@ -99,8 +98,26 @@ class NLPController(BaseController):
             )
         ]
 
+        return chat_history, full_prompt, retrieved_documents
+
+    async def answer_rag_question(self, project: Project, query: str, limit: int = 5):
+        """Answer the query from the project's documents in one response.
+
+        Returns (answer, full_prompt, retrieved_documents); answer is None on failure,
+        retrieved_documents is None when the project has no vector collection.
+        """
+        chat_history, full_prompt, retrieved_documents = await self.prepare_rag_prompt(
+            project=project, query=query, limit=limit
+        )
+        if not retrieved_documents:
+            return None, None, retrieved_documents
+
         answer = await self.generation_client.generate_text(
             prompt=full_prompt, chat_history=chat_history
         )
 
         return answer, full_prompt, retrieved_documents
+
+    def stream_rag_answer(self, chat_history: list, full_prompt: str):
+        """Async generator yielding the answer text piece by piece (use prepare_rag_prompt first)."""
+        return self.generation_client.stream_text(prompt=full_prompt, chat_history=chat_history)

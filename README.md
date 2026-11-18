@@ -47,7 +47,7 @@ See [`frontend/README.md`](frontend/README.md).
     └── routes/
         ├── base.py            # GET  /api/v1/
         ├── data.py            # POST /api/v1/data/upload, /api/v1/data/process
-        ├── nlp.py             # /api/v1/nlp/index/push, /info, /search, /answer
+        ├── nlp.py             # /api/v1/nlp/index/push, /info, /search, /answer, /answer/stream
         └── schemas/data.py    # ProcessRequest
 ```
 
@@ -248,6 +248,26 @@ $ curl -X POST "http://localhost:5000/api/v1/nlp/index/answer/1"        -H "Cont
 ```
 
 `404` `vectordb_collection_not_found` if the project was never pushed to the index, `404` `no_relevant_documents` if the search returns nothing, `500` `rag_answer_error` if the generation model fails (check that Ollama is running and `qwen2.5:3b` is pulled). On CPU, expect several seconds per answer; a lower `limit` makes it faster.
+
+### `POST /api/v1/nlp/index/answer/stream/{project_id}`
+
+Same request body and errors as `/answer`, but the answer is streamed as it is generated (this is what the web UI uses). The response is NDJSON, one JSON object per line:
+
+```
+{"type": "sources", "sources": [...], "full_prompt": "..."}   first
+{"type": "token", "text": "Jupiter"}                           repeated
+{"type": "done"}                                               or {"type": "error", "message": "rag_answer_error"}
+```
+
+```bash
+$ curl -N -X POST "http://localhost:5000/api/v1/nlp/index/answer/stream/1" \
+       -H "Content-Type: application/json" \
+       -d '{"text": "Which planet is the biggest?"}'
+```
+
+Closing the connection stops generation in Ollama (the UI's **Stop** button does this).
+
+> **Slow first answer?** Ollama unloads a model after 5 minutes idle, and reloading `qwen2.5:3b` on CPU takes ~20-30 s. Keep it loaded longer by setting the environment variable `OLLAMA_KEEP_ALIVE=1h` (or `-1` for forever) before starting Ollama.
 
 ## Data Models
 
