@@ -23,3 +23,6 @@ class ResponseSignal(Enum):
     VECTORDB_COLLECTION_NOT_FOUND = "vectordb_collection_not_found"
     VECTORDB_SEARCH_SUCCESS = "vectordb_search_success"
     VECTORDB_SEARCH_ERROR = "vectordb_search_error"
+    RAG_ANSWER_SUCCESS = "rag_answer_success"
+    RAG_ANSWER_ERROR = "rag_answer_error"
+    NO_RELEVANT_DOCUMENTS = "no_relevant_documents"
