@@ -35,9 +35,13 @@ export default function App() {
   }, [theme])
 
   useEffect(() => {
-    // Keep only finished messages; a reload mid-request would otherwise show a stuck spinner.
+    // Drop answers still waiting for their first token, and save a streaming answer as
+    // stopped; a reload mid-request would otherwise restore a stuck spinner or cursor.
     const finished = Object.fromEntries(
-      Object.entries(chats).map(([k, msgs]) => [k, msgs.filter((m) => !m.pending)]),
+      Object.entries(chats).map(([k, msgs]) => [
+        k,
+        msgs.filter((m) => !m.pending).map((m) => (m.streaming ? { ...m, streaming: false, stopped: true } : m)),
+      ]),
     )
     storage.setJSON('chats', finished)
   }, [chats])

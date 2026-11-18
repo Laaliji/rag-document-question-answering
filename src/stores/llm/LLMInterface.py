@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
 
 class LLMInterface(ABC):
 
@@ -15,6 +15,13 @@ class LLMInterface(ABC):
     async def generate_text(self, prompt: str, chat_history: list = [],
                             max_output_tokens: Optional[int] = None,
                             temperature: Optional[float] = None):
+        pass
+
+    @abstractmethod
+    def stream_text(self, prompt: str, chat_history: list = [],
+                    max_output_tokens: Optional[int] = None,
+                    temperature: Optional[float] = None) -> AsyncIterator[str]:
+        """Async generator yielding the generated text piece by piece"""
         pass
 
     @abstractmethod
