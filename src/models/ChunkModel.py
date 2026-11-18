@@ -50,3 +50,14 @@ class ChunkModel(BaseDataModel):
         records = await self.collection.find({"chunk_project_id": project_id})             .sort("_id", 1)             .skip((page_no - 1) * page_size)             .limit(page_size)             .to_list(length=None)
 
         return [DataChunk(**record) for record in records]
+
+    async def count_chunks_per_asset(self, project_id: ObjectId):
+        """
+        Return {asset_id (str): chunk count} for every processed asset of a project.
+        """
+        pipeline = [
+            {"$match": {"chunk_project_id": project_id}},
+            {"$group": {"_id": "$chunk_asset_id", "count": {"$sum": 1}}},
+        ]
+        result = await self.collection.aggregate(pipeline).to_list(length=None)
+        return {str(row["_id"]): row["count"] for row in result}

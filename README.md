@@ -10,7 +10,19 @@ Current features:
 - Pydantic data models for `Project`, `Asset` and `DataChunk` documents
 - Uploaded files are tracked in MongoDB; processing works on one file or all files of a project
 - Chunks are embedded with a free local model (Ollama `nomic-embed-text`) and indexed in Qdrant for semantic search
+- Questions are answered from the retrieved chunks by a free local model (Ollama `qwen2.5:3b`), with the sources returned alongside the answer
 - LLM and vector DB are behind interfaces + factories, so the backend is swappable from `.env`
+- React web UI (`frontend/`): projects, drag-and-drop upload, one-click process & index, and a chat that shows the source passages behind each answer
+
+## Web UI
+
+```bash
+$ cd frontend
+$ npm install
+$ npm run dev          # http://localhost:5173 (proxies /api to the backend on :5000)
+```
+
+See [`frontend/README.md`](frontend/README.md).
 
 ## Project Structure
 
@@ -18,6 +30,7 @@ Current features:
 .
 ├── docker/
 │   └── docker-compose.yml     # MongoDB + Qdrant services
+├── frontend/                  # React + Vite web UI
 └── src/
     ├── main.py                # FastAPI app + lifespan (MongoDB connect/close)
     ├── .env.example
@@ -26,7 +39,7 @@ Current features:
     ├── controllers/           # Base, Data, Project, Process controllers
     ├── helpers/config.py      # Settings loaded from .env
     ├── stores/
-    │   ├── llm/               # LLMInterface, OpenAI-compatible provider, factory
+    │   ├── llm/               # LLMInterface, OpenAI-compatible provider, factory, prompt templates
     │   └── vectordb/          # VectorDBInterface, Qdrant provider, factory
     ├── models/
     │   ├── db_schemas/        # Project, DataChunk (Pydantic)
@@ -34,7 +47,7 @@ Current features:
     └── routes/
         ├── base.py            # GET  /api/v1/
         ├── data.py            # POST /api/v1/data/upload, /api/v1/data/process
-        ├── nlp.py             # /api/v1/nlp/index/push, /info, /search
+        ├── nlp.py             # /api/v1/nlp/index/push, /info, /search, /answer
         └── schemas/data.py    # ProcessRequest
 ```
 
@@ -46,7 +59,7 @@ Current features:
 
 ```bash
 $ ollama pull nomic-embed-text   # embeddings (768 dims)
-$ ollama pull qwen2.5:3b         # generation (used by the upcoming answer endpoint)
+$ ollama pull qwen2.5:3b         # generation (used by the answer endpoint)
 ```
 
 ### Create a virtual environment
@@ -186,6 +199,14 @@ Response (`200`):
 
 Returns `404` `file_not_found` if the `file_id` does not exist in the project, `404` `no_files_found` if the project has no files, and `422` if `project_id` is not alphanumeric.
 
+### `GET /api/v1/data/projects`
+
+Lists every project: `{"projects": ["1", "astronomy"]}`.
+
+### `GET /api/v1/data/files/{project_id}`
+
+Lists the project's uploaded files with their processing state: `{"files": [{file_id, asset_id, size, uploaded_at, chunks}]}` (`chunks` is `0` until the file is processed). `404` if the project does not exist.
+
 ### `POST /api/v1/nlp/index/push/{project_id}`
 
 Embeds all chunks of the project (50 per batch) and stores them in the Qdrant collection `collection_{project_id}`. Body: `{"do_reset": 1}` recreates the collection first. Pushing twice does not duplicate points (ids are derived from chunk ids).
@@ -207,6 +228,26 @@ $ curl -X POST "http://localhost:5000/api/v1/nlp/index/search/1"        -H "Cont
 ```
 
 Returns `results`: a list of `{score, text, metadata}`, best match first. `404` if the project or its collection does not exist.
+
+### `POST /api/v1/nlp/index/answer/{project_id}`
+
+Answers a question from the project's documents (RAG): retrieves the top `limit` chunks (default 5, max 20), puts them into the prompt from `src/stores/llm/templates/rag_prompts.py`, and asks the generation model to answer only from them, in the language of the question.
+
+```bash
+$ curl -X POST "http://localhost:5000/api/v1/nlp/index/answer/1"        -H "Content-Type: application/json"        -d '{"text": "Which planet is the biggest?", "limit": 3}'
+```
+
+```json
+{
+  "message": "rag_answer_success",
+  "answer": "Jupiter is the biggest planet.",
+  "full_prompt": "## Document 1
+...",
+  "sources": [{ "score": 0.81, "text": "...", "metadata": {} }]
+}
+```
+
+`404` `vectordb_collection_not_found` if the project was never pushed to the index, `404` `no_relevant_documents` if the search returns nothing, `500` `rag_answer_error` if the generation model fails (check that Ollama is running and `qwen2.5:3b` is pulled). On CPU, expect several seconds per answer; a lower `limit` makes it faster.
 
 ## Data Models
 
