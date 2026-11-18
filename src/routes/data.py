@@ -21,6 +21,43 @@ data_router = APIRouter(
 # project_id is used as a folder name, so only allow alphanumeric values (FastAPI returns 422 otherwise)
 ProjectIdPath = Path(..., pattern=r"^[a-zA-Z0-9]+$")
 
+@data_router.get("/projects")
+async def list_projects(request: Request):
+    projects = await ProjectModel(db_client=request.app.db_client).get_all_projects()
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"projects": [project.project_id for project in projects]}
+    )
+
+@data_router.get("/files/{project_id}")
+async def list_project_files(request: Request, project_id: str = ProjectIdPath):
+    project = await ProjectModel(db_client=request.app.db_client).get_project(project_id=project_id)
+    if project is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": ResponseSignal.PROJECT_NOT_FOUND.value}
+        )
+
+    assets = await AssetModel(db_client=request.app.db_client).get_all_project_assets(
+        asset_project_id=project.id, asset_type=AssetTypeEnum.FILE.value
+    )
+    chunk_counts = await ChunkModel(db_client=request.app.db_client).count_chunks_per_asset(
+        project_id=project.id
+    )
+
+    files = [
+        {
+            "file_id": asset.asset_name,
+            "asset_id": str(asset.id),
+            "size": asset.asset_size,
+            "uploaded_at": asset.asset_pushed_at.isoformat(),
+            "chunks": chunk_counts.get(str(asset.id), 0),
+        }
+        for asset in assets
+    ]
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"files": files})
+
 @data_router.post("/upload/{project_id}")
 async def upload_data(request: Request,
                       project_id: str = ProjectIdPath,

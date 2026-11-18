@@ -40,3 +40,10 @@ class ProjectModel(BaseDataModel):
         """
         record = await self.collection.find_one({"project_id": project_id})
         return Project(**record) if record else None
+
+    async def get_all_projects(self):
+        """
+        Return every project, oldest first.
+        """
+        records = await self.collection.find({}).sort("_id", 1).to_list(length=None)
+        return [Project(**record) for record in records]

@@ -1,15 +1,17 @@
 from .BaseController import BaseController
 from models.db_schemas import Project, DataChunk
-from stores.llm import DocumentTypeEnum
+from stores.llm import DocumentTypeEnum, OpenAIRoleEnums
+from stores.llm.templates import rag_prompts
 from typing import List
 
 class NLPController(BaseController):
 
-    def __init__(self, vectordb_client, embedding_client):
+    def __init__(self, vectordb_client, embedding_client, generation_client=None):
         super().__init__()
 
         self.vectordb_client = vectordb_client
         self.embedding_client = embedding_client
+        self.generation_client = generation_client
 
     def create_collection_name(self, project_id: str):
         return f"collection_{project_id}".strip()
@@ -67,3 +69,38 @@ class NLPController(BaseController):
         return await self.vectordb_client.search_by_vector(
             collection_name=collection_name, vector=vectors[0], limit=limit
         )
+
+    async def answer_rag_question(self, project: Project, query: str, limit: int = 5):
+        """Retrieve the top chunks for the query and ask the generation model to answer from them.
+
+        Returns (answer, full_prompt, retrieved_documents); answer is None on failure,
+        retrieved_documents is None when the project has no vector collection.
+        """
+        retrieved_documents = await self.search_vector_db_collection(
+            project=project, text=query, limit=limit
+        )
+        if retrieved_documents is None:
+            return None, None, None
+        if len(retrieved_documents) == 0:
+            return None, None, []
+
+        system_prompt = rag_prompts.SYSTEM_PROMPT.substitute()
+
+        documents_prompt = "\n\n".join(
+            rag_prompts.DOCUMENT_PROMPT.substitute(doc_num=idx + 1, chunk_text=doc["text"])
+            for idx, doc in enumerate(retrieved_documents)
+        )
+        footer_prompt = rag_prompts.FOOTER_PROMPT.substitute(query=query)
+        full_prompt = "\n\n".join([documents_prompt, footer_prompt])
+
+        chat_history = [
+            self.generation_client.construct_prompt(
+                prompt=system_prompt, role=OpenAIRoleEnums.SYSTEM.value
+            )
+        ]
+
+        answer = await self.generation_client.generate_text(
+            prompt=full_prompt, chat_history=chat_history
+        )
+
+        return answer, full_prompt, retrieved_documents
