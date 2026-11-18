@@ -12,6 +12,7 @@ export type Notify = (kind: Toast['kind'], text: string) => void
 
 export default function App() {
   const [health, setHealth] = useState<Health>('checking')
+  const [healthError, setHealthError] = useState('')
   const [projects, setProjects] = useState<string[]>([])
   const [drafts, setDrafts] = useState<string[]>([])
   const [active, setActive] = useState<string | null>(() => storage.get('activeProject'))
@@ -64,8 +65,10 @@ export default function App() {
       setProjects(list)
       setDrafts((d) => d.filter((p) => !list.includes(p)))
       setActive((cur) => cur ?? list[0] ?? null)
-    } catch {
+      setHealthError('')
+    } catch (e) {
       setHealth('offline')
+      setHealthError((e as Error).message)
     }
   }, [])
 
@@ -88,7 +91,10 @@ export default function App() {
         setFiles(f)
         setIndexInfo(info)
       } catch (e) {
-        if (e instanceof ApiError && e.status === 0) setHealth('offline')
+        if (e instanceof ApiError && (e.status === 0 || e.signal === 'not_api')) {
+          setHealth('offline')
+          setHealthError(e.message)
+        }
       }
     },
     [active],
@@ -129,6 +135,15 @@ export default function App() {
         onRetry={loadProjects}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
+
+      {health === 'offline' && active && (
+        <div className="offline-banner" role="alert">
+          <strong>Backend unavailable.</strong> {healthError}
+          <button className="btn btn-ghost btn-xs" onClick={loadProjects}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {active ? (
         <main className="workspace">
@@ -194,8 +209,8 @@ export default function App() {
             </p>
             {health === 'offline' && (
               <p className="callout callout-warn">
-                The backend is not reachable. Start it with <code>uvicorn main:app --port 5000</code> from{' '}
-                <code>src/</code>.
+                {healthError || 'The backend is not reachable.'} Start the API with{' '}
+                <code>uvicorn main:app --port 5000</code> from <code>src/</code>.
               </p>
             )}
           </div>

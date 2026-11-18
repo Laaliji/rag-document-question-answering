@@ -1336,6 +1336,29 @@ kbd {
   border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
 }
 
+/* ---------- Offline banner ---------- */
+.offline-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  color: var(--text);
+}
+.offline-banner strong {
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    Toasts
    ========================================================================== */

@@ -44,6 +44,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turns a response that is not valid backend JSON into an ApiError.
+ * 5xx with no JSON = the Vite proxy could not reach the backend (it is down);
+ * anything else (e.g. 404 or an HTML page) = the request never reached the API at all.
+ */
+function errorFor(status: number, body: { message?: string } | null) {
+  if (body) return new ApiError(status, body.message ?? '')
+  if (status >= 500) return new ApiError(0, '')
+  return new ApiError(status, 'not_api')
+}
+
 // Backend responses carry a machine-readable `message` signal; map the
 // common ones to sentences a person can act on.
 const SIGNAL_TEXT: Record<string, string> = {
@@ -60,11 +71,13 @@ const SIGNAL_TEXT: Record<string, string> = {
   no_relevant_documents: 'No relevant passages were found for this question.',
   rag_answer_error: 'The model could not answer. Is Ollama running with qwen2.5:3b pulled?',
   stream_interrupted: 'The connection to the backend was lost while answering.',
+  not_api:
+    'The dev server is not forwarding /api to the backend. Restart the UI with "npm run dev" from the frontend folder.',
 }
 
 function describeSignal(signal: string, status: number) {
   if (SIGNAL_TEXT[signal]) return SIGNAL_TEXT[signal]
-  if (status === 0 && !signal) return 'Cannot reach the backend. Is the API running on port 5000?'
+  if (status === 0) return 'Cannot reach the backend. Is the API running on port 5000?'
   if (status === 422) return 'The request was rejected as invalid.'
   return signal || `Request failed (${status})`
 }
@@ -81,7 +94,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   // The Vite proxy answers 500/502/504 with an empty body when the backend is down
   const body = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(body ? res.status : 0, body?.message ?? '')
+  if (!res.ok || !body) throw errorFor(res.status, body)
   return body as T
 }
 
@@ -151,7 +164,7 @@ export const api = {
 
     if (!res.ok || !res.body) {
       const body = await res.json().catch(() => null)
-      throw new ApiError(body ? res.status : 0, body?.message ?? '')
+      throw errorFor(res.status, body)
     }
 
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
@@ -194,7 +207,7 @@ export const api = {
           /* non-JSON error page */
         }
         if (xhr.status >= 200 && xhr.status < 300 && body?.file_id) resolve({ file_id: body.file_id })
-        else reject(new ApiError(body ? xhr.status : 0, body?.message ?? ''))
+        else reject(errorFor(xhr.status, body))
       }
       xhr.onerror = () => reject(new ApiError(0, ''))
       const form = new FormData()
