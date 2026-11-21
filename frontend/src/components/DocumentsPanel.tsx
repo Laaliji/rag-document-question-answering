@@ -117,7 +117,10 @@ export function DocumentsPanel(props: Props) {
       <div className={`docs-scrim ${open ? 'is-open' : ''}`} onClick={onClose} aria-hidden />
       <aside className={`docs ${open ? 'is-open' : ''}`} aria-label="Documents">
         <div className="docs-head">
-          <h2>Documents</h2>
+          <div>
+            <h2>Documents</h2>
+            <p>Your sources for this project</p>
+          </div>
           <button className="icon-btn docs-close" onClick={onClose} aria-label="Close documents panel">
             <X size={16} />
           </button>
@@ -137,8 +140,10 @@ export function DocumentsPanel(props: Props) {
             tabIndex={0}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
           >
-            <UploadCloud size={22} />
-            <strong>Drop files here or click to browse</strong>
+            <span className="dropzone-icon">
+              <UploadCloud size={20} />
+            </span>
+            <strong>Drop files here or <u>browse</u></strong>
             <span>PDF or TXT · up to {MAX_MB} MB each</span>
             <input
               ref={inputRef}
@@ -184,6 +189,7 @@ export function DocumentsPanel(props: Props) {
                   <li key={f.asset_id} className="file-item">
                     <span className={`file-icon ${f.file_id.toLowerCase().endsWith('.pdf') ? 'is-pdf' : ''}`}>
                       <FileText size={15} />
+                      <small>{f.file_id.toLowerCase().endsWith('.pdf') ? 'PDF' : 'TXT'}</small>
                     </span>
                     <span className="file-main">
                       <span className="file-name" title={displayName(f.file_id)}>
@@ -207,30 +213,38 @@ export function DocumentsPanel(props: Props) {
           <div className="docs-section">
             <div className="docs-section-head">
               <span>Search index</span>
-              {stale && <span className="pill pill-warn">Outdated</span>}
             </div>
-            <dl className="stats">
-              <div>
-                <dt>
-                  <Layers size={13} /> Chunks
-                </dt>
-                <dd>{totalChunks}</dd>
+            <div className={`index-card ${indexed > 0 ? (stale ? 'is-warn' : 'is-ready') : ''}`}>
+              <div className="index-card-top">
+                <span className="index-card-icon">
+                  <Database size={16} />
+                </span>
+                <div>
+                  <strong>{indexed.toLocaleString()}</strong>
+                  <span>vectors indexed</span>
+                </div>
+                <span className="index-card-state">{indexed === 0 ? 'Empty' : stale ? 'Outdated' : 'Ready'}</span>
               </div>
-              <div>
-                <dt>
-                  <Database size={13} /> Vectors
-                </dt>
-                <dd>{indexed}</dd>
+              <div className="progress progress-lg" aria-label="Indexed share of chunks">
+                <span style={{ width: `${totalChunks ? Math.min(100, (indexed / totalChunks) * 100) : 0}%` }} />
               </div>
-              <div>
-                <dt>Dimensions</dt>
-                <dd>{indexInfo?.vector_size ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Distance</dt>
-                <dd>{indexInfo?.distance ?? '—'}</dd>
-              </div>
-            </dl>
+              <dl className="stats">
+                <div>
+                  <dt>
+                    <Layers size={12} /> Chunks
+                  </dt>
+                  <dd>{totalChunks.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Dimensions</dt>
+                  <dd>{indexInfo?.vector_size ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Distance</dt>
+                  <dd>{indexInfo?.distance ?? '—'}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
         </div>
 

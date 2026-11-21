@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import {
   ArrowUp,
+  BookOpen,
+  CalendarClock,
   Check,
   ChevronDown,
   Copy,
+  ListChecks,
   RotateCcw,
   Sparkles,
   Square,
@@ -38,9 +41,9 @@ interface Props {
 }
 
 const SUGGESTIONS = [
-  'Summarize the main points of these documents.',
-  'What are the key definitions or terms?',
-  'List any important dates, figures or deadlines.',
+  { icon: ListChecks, title: 'Summarize', text: 'Summarize the main points of these documents.' },
+  { icon: BookOpen, title: 'Define', text: 'What are the key definitions or terms?' },
+  { icon: CalendarClock, title: 'Extract', text: 'List any important dates, figures or deadlines.' },
 ]
 
 const TOP_K = [3, 5, 8]
@@ -135,7 +138,7 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
         {messages.length === 0 ? (
           <div className="chat-empty">
             <div className="chat-empty-icon">
-              <Sparkles size={20} />
+              <Sparkles size={22} />
             </div>
             <h2>{ready ? 'What would you like to know?' : 'Prepare your documents first'}</h2>
             <p>
@@ -147,17 +150,34 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
             </p>
             {ready ? (
               <div className="suggestions">
-                {SUGGESTIONS.map((s) => (
-                  <button key={s} className="suggestion" onClick={() => ask(s)}>
-                    {s}
+                {SUGGESTIONS.map(({ icon: Icon, title, text }) => (
+                  <button key={title} className="suggestion" onClick={() => ask(text)}>
+                    <span className="suggestion-icon">
+                      <Icon size={16} />
+                    </span>
+                    <strong>{title}</strong>
+                    <span>{text}</span>
                   </button>
                 ))}
               </div>
             ) : (
-              <button className="btn btn-primary" onClick={() => onPrepare(hasFiles ? 'prepare' : 'upload')}>
-                {hasFiles ? <Zap size={15} /> : <UploadCloud size={15} />}
-                {hasFiles ? 'Process & index' : 'Upload documents'}
-              </button>
+              <>
+                <ol className="setup-steps">
+                  <li className={hasFiles ? 'is-done' : 'is-current'}>
+                    <span>{hasFiles ? <Check size={12} strokeWidth={3} /> : 1}</span> Upload documents
+                  </li>
+                  <li className={hasFiles ? 'is-current' : ''}>
+                    <span>2</span> Process &amp; index
+                  </li>
+                  <li>
+                    <span>3</span> Ask questions
+                  </li>
+                </ol>
+                <button className="btn btn-primary btn-lg" onClick={() => onPrepare(hasFiles ? 'prepare' : 'upload')}>
+                  {hasFiles ? <Zap size={16} /> : <UploadCloud size={16} />}
+                  {hasFiles ? 'Process & index' : 'Upload documents'}
+                </button>
+              </>
             )}
           </div>
         ) : (
@@ -193,16 +213,23 @@ export function ChatPanel({ projectId, ready, hasFiles, messages, setMessages, o
             aria-label="Question"
           />
           <div className="composer-bar">
-            <label className="topk" title="How many passages to retrieve for each answer">
+            <div className="topk" role="radiogroup" aria-label="Passages to retrieve" title="How many passages to retrieve for each answer">
               <span>Passages</span>
-              <select value={topK} onChange={(e) => setTopK(Number(e.target.value))} disabled={!ready}>
+              <div className="segmented">
                 {TOP_K.map((k) => (
-                  <option key={k} value={k}>
+                  <button
+                    key={k}
+                    role="radio"
+                    aria-checked={topK === k}
+                    className={topK === k ? 'is-on' : ''}
+                    onClick={() => setTopK(k)}
+                    disabled={!ready}
+                  >
                     {k}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
             <span className="composer-hint">
               <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line
             </span>
@@ -272,18 +299,26 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
 
         {m.sources && m.sources.length > 0 && (
           <div className="sources">
-            <div className="sources-label">Sources</div>
-            <div className="source-chips">
+            <div className="sources-label">
+              <BookOpen size={12} /> {m.sources.length} source{m.sources.length === 1 ? '' : 's'}
+            </div>
+            <div className="source-grid">
               {m.sources.map((s, i) => (
                 <button
                   key={i}
-                  className={`source-chip ${openSource === i ? 'is-open' : ''}`}
+                  className={`source-card-btn ${openSource === i ? 'is-open' : ''}`}
                   onClick={() => setOpenSource(openSource === i ? null : i)}
                   aria-expanded={openSource === i}
                 >
-                  <span className="source-num">{i + 1}</span>
-                  <span className="source-name">{sourceLabel(s.metadata)}</span>
-                  <span className="source-score">{Math.round(s.score * 100)}%</span>
+                  <span className="source-top">
+                    <span className="source-num">{i + 1}</span>
+                    <span className="source-name">{sourceLabel(s.metadata)}</span>
+                    <span className="source-score">{Math.round(s.score * 100)}%</span>
+                  </span>
+                  <span className="source-snippet">{s.text}</span>
+                  <span className="score-bar">
+                    <span style={{ width: `${Math.max(0, Math.min(1, s.score)) * 100}%` }} />
+                  </span>
                 </button>
               ))}
             </div>
@@ -293,8 +328,8 @@ function AssistantMessage({ message: m, onRetry }: { message: ChatMessage; onRet
                   <span>
                     Passage {openSource + 1} · {sourceLabel(m.sources[openSource].metadata)}
                   </span>
-                  <span className="score-bar" aria-label={`Relevance ${Math.round(m.sources[openSource].score * 100)}%`}>
-                    <span style={{ width: `${Math.max(0, Math.min(1, m.sources[openSource].score)) * 100}%` }} />
+                  <span className="source-score">
+                    Relevance {Math.round(m.sources[openSource].score * 100)}%
                   </span>
                 </div>
                 <p>{m.sources[openSource].text}</p>

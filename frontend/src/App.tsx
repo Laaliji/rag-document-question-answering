@@ -5,6 +5,8 @@ import { Sidebar, type Health } from './components/Sidebar'
 import { ChatPanel, type ChatMessage } from './components/ChatPanel'
 import { DocumentsPanel } from './components/DocumentsPanel'
 import { Pipeline } from './components/Pipeline'
+import { Home } from './components/Home'
+import { ProjectAvatar } from './components/ProjectAvatar'
 import { Toasts, type Toast } from './components/Toasts'
 import { storage } from './storage'
 
@@ -149,8 +151,11 @@ export default function App() {
         <main className="workspace">
           <header className="topbar">
             <div className="topbar-title">
-              <span className="eyebrow">Project</span>
-              <h1>{active}</h1>
+              <ProjectAvatar name={active} size={34} />
+              <div>
+                <span className="eyebrow">Project</span>
+                <h1>{active}</h1>
+              </div>
             </div>
             <Pipeline files={files.length} chunks={totalChunks} indexed={indexed} />
             <button
@@ -195,26 +200,7 @@ export default function App() {
           </div>
         </main>
       ) : (
-        <main className="workspace workspace-empty">
-          <div className="empty-hero">
-            <div className="empty-mark" aria-hidden>
-              <span />
-              <span />
-              <span />
-            </div>
-            <h1>Ask your documents anything</h1>
-            <p>
-              Create a project, upload PDFs or text files, and get answers grounded in your own sources. Everything
-              runs locally — no paid APIs.
-            </p>
-            {health === 'offline' && (
-              <p className="callout callout-warn">
-                {healthError || 'The backend is not reachable.'} Start the API with{' '}
-                <code>uvicorn main:app --port 5000</code> from <code>src/</code>.
-              </p>
-            )}
-          </div>
-        </main>
+        <Home health={health} healthError={healthError} onCreate={createProject} />
       )}
 
       <Toasts toasts={toasts} onDismiss={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
